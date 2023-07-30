@@ -270,7 +270,7 @@ func (d *Dictionary) indexShard(shard []byte, idx int) ([]byte, error) {
 			return io.EOF
 		}
 		return nil
-	}); err != nil {
+	}); err != nil && err != io.EOF {
 		return nil, err
 	}
 	if data == nil {
