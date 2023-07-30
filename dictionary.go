@@ -33,19 +33,11 @@ type Dictionary struct {
 
 // Ref points to a definition.
 type Ref struct {
-	ok    bool
 	shard int
 	index int
 }
 
-func (r Ref) Exists() bool {
-	return r.ok
-}
-
 func (r Ref) String() string {
-	if !r.Exists() {
-		return "?"
-	}
 	return strconv.Itoa(r.shard) + "/" + strconv.Itoa(r.index)
 }
 
@@ -97,57 +89,55 @@ func (d *Dictionary) Close() error {
 	return d.db.Close()
 }
 
-// Lookup finds a word in the dictionary and returns the definition. If the word
-// does not exist, the entry will be nil.
-func (d *Dictionary) Lookup(word string) (*Entry, error) {
-	w, err := d.LookupRef(word)
+// Lookup finds a word in the dictionary and returns the definition(s). If the
+// word does not exist, a nil slice will be returned.
+func (d *Dictionary) Lookup(word string) ([]Entry, error) {
+	rs, err := d.LookupRef(word)
 	if err != nil {
 		return nil, err
 	}
-	if !w.Exists() {
+
+	if rs == nil {
 		return nil, nil
 	}
 
-	seg, err := d.Get(w)
-	if err != nil {
-		return nil, err
+	es := make([]Entry, len(rs))
+	for i, r := range rs {
+		seg, err := d.Get(r)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(seg, &es[i]); err != nil {
+			return nil, err
+		}
 	}
-
-	var e Entry
-	if err := json.Unmarshal(seg, &e); err != nil {
-		return nil, err
-	}
-	return &e, nil
+	return es, nil
 }
 
-// LookupRef finds an entry in the dictionary. If the word does not exist, err
-// will be nil and the ref will be invalid.
-func (d *Dictionary) LookupRef(word string) (Ref, error) {
-	stmt, _, err := d.db.Prepare("SELECT JsonShardID, JsonIndex FROM WordLookup WHERE Name = ? LIMIT 1")
+// LookupRef finds an entry in the dictionary. If the word does not exist, a nil
+// err and slice will be returned.
+func (d *Dictionary) LookupRef(word string) ([]Ref, error) {
+	stmt, _, err := d.db.Prepare("SELECT JsonShardID, JsonIndex FROM WordLookup WHERE Name = ?")
 	if err != nil {
-		return Ref{}, err
+		return nil, err
 	}
 	defer stmt.Close()
 
+	var rs []Ref
 	if err := stmt.BindText(1, word); err != nil {
-		return Ref{}, err
+		return nil, err
 	}
-	if stmt.Step() {
-		return Ref{
-			ok:    true,
+	for stmt.Step() {
+		rs = append(rs, Ref{
 			shard: stmt.ColumnInt(0),
 			index: stmt.ColumnInt(1),
-		}, nil
+		})
 	}
-	return Ref{}, stmt.Err()
+	return rs, stmt.Err()
 }
 
 // Get gets the raw entry referenced by r.
 func (d *Dictionary) Get(r Ref) ([]byte, error) {
-	if !r.Exists() {
-		return nil, errors.New("invalid reference")
-	}
-
 	buf, err := d.readShard(r.shard)
 	if err != nil {
 		return nil, err
@@ -186,7 +176,6 @@ func (d *Dictionary) Entries() ([]Ref, error) {
 	var rs []Ref
 	for stmt.Step() {
 		rs = append(rs, Ref{
-			ok:    true,
 			shard: stmt.ColumnInt(0),
 			index: stmt.ColumnInt(1),
 		})
@@ -205,7 +194,6 @@ func (d *Dictionary) WalkRefs(fn func(term string, ref Ref) error) error {
 
 	for stmt.Step() {
 		if err := fn(stmt.ColumnText(0), Ref{
-			ok:    true,
 			shard: stmt.ColumnInt(1),
 			index: stmt.ColumnInt(2),
 		}); err != nil {
@@ -234,7 +222,6 @@ func (d *Dictionary) Walk(fn func(ref Ref, buf []byte) error) error {
 		}
 		if err := d.walkShard(buf, func(idx int, data []byte) error {
 			return fn(Ref{
-				ok:    true,
 				shard: shard,
 				index: idx,
 			}, data)
