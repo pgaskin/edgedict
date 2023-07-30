@@ -194,6 +194,27 @@ func (d *Dictionary) Entries() ([]Ref, error) {
 	return rs, stmt.Err()
 }
 
+// WalkRefs efficiently iterates over all word references from the dictionary,
+// breaking if fn returns a non-nil error.
+func (d *Dictionary) WalkRefs(fn func(term string, ref Ref) error) error {
+	stmt, _, err := d.db.Prepare("SELECT Name, JsonShardID, JsonIndex FROM WordLookup")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for stmt.Step() {
+		if err := fn(stmt.ColumnText(0), Ref{
+			ok:    true,
+			shard: stmt.ColumnInt(1),
+			index: stmt.ColumnInt(2),
+		}); err != nil {
+			return err
+		}
+	}
+	return stmt.Err()
+}
+
 // Walk efficiently iterates over all unique definitions from the dictionary,
 // breaking if fn returns a non-nil error.
 func (d *Dictionary) Walk(fn func(ref Ref, buf []byte) error) error {
