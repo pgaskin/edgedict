@@ -1,4 +1,4 @@
-github.com/ncruces/go-sqlite3 v0.8.3 h1:z0wk9m8zmuPGbMy/gpuzN+6xcbrh80lScVl7A1EnhUU=
+github.com/ncruces/go-sqlite3 v0.8.3 h1:kYUAqDpZ0OT+snTH1yWyxq9QSJ22HoM3WKfFEL4N694=
 github.com/ncruces/go-sqlite3 v0.8.3/go.mod h1:DUdzKfMlIFmSLAtNHdIgxbdax/5NsQx2RlIlVO7EWfU=
 github.com/ncruces/julianday v0.1.5 h1:hDJ9ejiMp3DHsoZ5KW4c1lwfMjbARS7u/gbYcd0FBZk=
 github.com/ncruces/julianday v0.1.5/go.mod h1:Dusn2KvZrrovOMJuOt0TNXL6tB7U2E8kvza5fFc9G7g=
