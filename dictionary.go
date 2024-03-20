@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ncruces/go-sqlite3"
+	"github.com/ncruces/go-sqlite3/util/ioutil"
 	"github.com/ncruces/go-sqlite3/vfs/readervfs"
 )
 
@@ -49,7 +50,7 @@ func init() {
 // New opens a MS Edge dictionary from a ReaderAt supporting seeking.
 func New(r io.ReaderAt) (*Dictionary, error) {
 	id := dbIDPrefix + "." + strconv.FormatUint(dbID.Add(1), 10) + ".db"
-	readervfs.Create(id, readervfs.NewSizeReaderAt(r))
+	readervfs.Create(id, ioutil.NewSizeReaderAt(r))
 
 	db, err := sqlite3.Open("file:" + id + "?vfs=reader")
 	if err != nil {
