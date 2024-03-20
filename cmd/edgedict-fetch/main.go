@@ -61,13 +61,13 @@ func run(ctx context.Context, pkg string) error {
 		fmt.Printf("info: getting package url\n")
 		u, err1 := packageURL(ctx)
 		if err1 != nil {
-			return fmt.Errorf("get package url: %w", err)
+			return fmt.Errorf("get package url: %w", err1)
 		}
 
 		fmt.Printf("info: downloading %q\n", u)
 		fn, err1 := download(ctx, u)
 		if err1 != nil {
-			return fmt.Errorf("download package: %w", err)
+			return fmt.Errorf("download package: %w", err1)
 		}
 		defer os.Remove(fn)
 
