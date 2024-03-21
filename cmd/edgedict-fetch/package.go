@@ -7,12 +7,15 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -64,6 +67,24 @@ const (
 	pkg_DigestSHA1     = "4b1cecf7ff096b39874481095d88012b098d1f19"
 	pkg_Size           = 444614378
 )
+
+// Zip offsets for 4b1cecf7ff096b39874481095d88012b098d1f19.
+//
+// This works because the appx files inside the bundle are not compressed.
+var pkg_Index = map[string]struct {
+	CRC32        uint32
+	Method       uint16
+	Offset       int64
+	Compressed   int64
+	Uncompressed int64
+}{
+	"Dictionary_DE.db":    {0x0cbd8733, 8, 37631947, 3978399, 4829184},    // ImmersiveReader.Apps.Uwp_1.4.0.0_language-de.appx // DictionaryData/de/Dictionary_DE.db
+	"Dictionary_ES.db":    {0xe93c4b02, 8, 52447770, 8588608, 9748480},    // ImmersiveReader.Apps.Uwp_1.4.0.0_language-es.appx // DictionaryData/es/Dictionary_ES.db
+	"Dictionary_FR.db":    {0xdf89c23d, 8, 137363318, 2725609, 3239936},   // ImmersiveReader.Apps.Uwp_1.4.0.0_language-fr.appx // DictionaryData/fr/Dictionary_FR.db
+	"Dictionary_IT.db":    {0xa5b9613c, 8, 145666864, 14609764, 16494592}, // ImmersiveReader.Apps.Uwp_1.4.0.0_language-it.appx // DictionaryData/it/Dictionary_IT.db
+	"Dictionary_EN_GB.db": {0x282c1e3b, 8, 245799764, 25755939, 30228480}, // ImmersiveReader.Apps.Uwp_1.4.0.0_x64.appx // DictionaryData/en/Dictionary_EN_GB.db
+	"Dictionary_EN_US.db": {0x00951d02, 8, 271555794, 24495368, 28549120}, // ImmersiveReader.Apps.Uwp_1.4.0.0_x64.appx // DictionaryData/en/Dictionary_EN_US.db
+}
 
 // packageRg gets the package URL from the store.rg-adguard.net API.
 func packageRg(ctx context.Context) (string, error) {
@@ -273,4 +294,63 @@ func uuid4() string {
 	u[6] = (u[6] & 0x0f) | 0x40
 	u[8] = (u[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:])
+}
+
+func packageIA(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://archive.org/wayback/available?url=http://tlu.dl.delivery.mp.microsoft.com/filestreamingservice/files/"+strings.TrimSuffix(pkg_FileName, path.Ext(pkg_FileName))+"?*", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request to internet archive api: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("internet archive response status %d (%s)", resp.StatusCode, resp.Status)
+	}
+
+	if mt, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); mt != "application/json" {
+		return "", fmt.Errorf("internet archive returned non-json response (got %q)", mt)
+	}
+
+	var obj struct {
+		URL               string `json:"url"`
+		ArchivedSnapshots struct {
+			Closest struct {
+				Status    string `json:"status"`
+				Available bool   `json:"available"`
+				URL       string `json:"url"`
+				Timestamp string `json:"timestamp"`
+			} `json:"closest"`
+		} `json:"archived_snapshots"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
+		return "", fmt.Errorf("failed to parse internet archive response: %w", err)
+	}
+	if !obj.ArchivedSnapshots.Closest.Available {
+		return "", fmt.Errorf("no snapshots available")
+	}
+	if obj.ArchivedSnapshots.Closest.Status != "200" {
+		return "", fmt.Errorf("latest snapshot was not successful")
+	}
+	if obj.ArchivedSnapshots.Closest.URL == "" {
+		return "", fmt.Errorf("latest snapshot does not have a url")
+	}
+
+	// make the link direct
+	u, err := url.Parse(obj.ArchivedSnapshots.Closest.URL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse snapshot url %q: %w", obj.ArchivedSnapshots.Closest.URL, err)
+	}
+	if spl := strings.Split(u.Path, "/"); len(spl) < 3 || spl[0] != "" || spl[1] != "web" || strings.HasSuffix(spl[2], "_") {
+		return "", fmt.Errorf("failed to parse snapshot url %q: does not match expected format", obj.ArchivedSnapshots.Closest.URL)
+	} else {
+		spl[2] += "im_"
+		u.Path = strings.Join(spl, "/")
+	}
+	return u.String(), nil
 }
