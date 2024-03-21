@@ -7,17 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -59,7 +55,11 @@ func run(ctx context.Context, pkg string) error {
 		bnd, err = zip.OpenReader(pkg)
 	} else {
 		fmt.Printf("info: getting package url\n")
-		u, err1 := packageURL(ctx)
+		u, err1 := packageWSUS(ctx)
+		if err1 != nil {
+			fmt.Fprintf(os.Stderr, "warn: failed to get package url from wsus (error: %v), trying rg-adguard", err1)
+			u, err1 = packageRg(ctx)
+		}
 		if err1 != nil {
 			return fmt.Errorf("get package url: %w", err1)
 		}
@@ -113,43 +113,6 @@ func run(ctx context.Context, pkg string) error {
 		}
 	}
 	return nil
-}
-
-func packageURL(ctx context.Context) (string, error) {
-	data := url.Values{
-		"type": {"PackageFamilyName"},
-		"url":  {"Microsoft.ImmersiveReader_8wekyb3d8bbwe"},
-		"ring": {"RP"},
-		"lang": {"en-CA"},
-	}.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://store.rg-adguard.net/api/GetFiles", strings.NewReader(data))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Content-Length", strconv.Itoa(len(data)))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request to rg-adguard store api: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("rg-adguard api response status %d (%s)", resp.StatusCode, resp.Status)
-	}
-
-	buf, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	m := regexp.MustCompile(`<a[^>]*\shref="([^"]+)"[^>]*>\s*Microsoft.ImmersiveReader_[0-9.]+_neutral_~_8wekyb3d8bbwe\.appxbundle\s*</a>`).FindStringSubmatch(string(buf))
-	if m == nil {
-		return "", fmt.Errorf("couldn't find matching appxbundle for package")
-	}
-	return html.UnescapeString(m[1]), nil
 }
 
 func download(ctx context.Context, url string) (string, error) {
