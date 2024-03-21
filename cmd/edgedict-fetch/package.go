@@ -5,13 +5,14 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -106,7 +107,15 @@ func packageRg(ctx context.Context) (string, error) {
 func packageWSUS(ctx context.Context) (string, error) {
 	// see https://github.com/littlebyteorg/appledb/blob/06ade711920f04afee900cb54ad7b7afa6f09316/tasks/grab_windows_store.py
 	// see https://github.com/LSPosed/MagiskOnWSALocal/blob/main/scripts/generateWSALinks.py
-	var obj struct {
+	// see https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wusp/2f66a682-164f-47ec-968e-e43c0a85dc21
+
+	sbuf, err := hex.DecodeString(pkg_DigestSHA1)
+	if err != nil {
+		return "", fmt.Errorf("failed to convert expected package sha1 to base64: decode hex: %w", err)
+	}
+	digest := base64.StdEncoding.EncodeToString(sbuf)
+
+	var locations struct {
 		Updates struct {
 			FileLocations []struct {
 				FileDigest string `xml:"FileDigest"`
@@ -136,29 +145,16 @@ func packageWSUS(ctx context.Context) (string, error) {
 			}
 			x.EndAuto()
 		}
-		{
-			x.Start(ns_CWS, "deviceAttributes")
-			x.Text(false, url.Values{
-				"InstallationType": {"Client"},
-				"FlightRing":       {wu_FlightRing},
-				"DeviceFamily":     {wu_DeviceFamily},
-				"OSVersion":        {wu_OSVersion},
-				"OSArchitecture":   {wu_OSArchitecture},
-				"InstallLanguage":  {wu_Locale},
-				"OSUILocale":       {wu_Locale},
-			}.Encode())
-			x.EndAuto()
-		}
 		return nil
-	}, &obj); err != nil {
-		return "", fmt.Errorf("failed to call wsus cws: %w", err)
+	}, &locations); err != nil {
+		return "", fmt.Errorf("failed to call wsus cws: GetExtendedUpdateInfo2: %w", err)
 	}
-	for _, f := range obj.Updates.FileLocations {
-		if strings.Contains(f.URL, strings.TrimSuffix(pkg_FileName, path.Ext(pkg_FileName))) {
+	for _, f := range locations.Updates.FileLocations {
+		if f.FileDigest == digest {
 			return f.URL, nil
 		}
 	}
-	return "", fmt.Errorf("failed to find link from wsus (got %v)", obj.Updates.FileLocations)
+	return "", fmt.Errorf("failed to find link with digest %s from wsus (got %v)", digest, locations.Updates.FileLocations)
 }
 
 func cws(ctx context.Context, action string, body func(x *xmlwriter.XMLWriter) error, out any) error {

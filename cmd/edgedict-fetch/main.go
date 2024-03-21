@@ -57,7 +57,7 @@ func run(ctx context.Context, pkg string) error {
 		fmt.Printf("info: getting package url\n")
 		u, err1 := packageWSUS(ctx)
 		if err1 != nil {
-			fmt.Fprintf(os.Stderr, "warn: failed to get package url from wsus (error: %v), trying rg-adguard", err1)
+			fmt.Fprintf(os.Stderr, "warn: failed to get package url from wsus (error: %v), trying rg-adguard\n", err1)
 			u, err1 = packageRg(ctx)
 		}
 		if err1 != nil {
