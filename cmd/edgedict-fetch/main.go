@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	Output = pflag.StringP("output", "o", "", "Output directory")
+	Output = pflag.StringP("output", "o", ".", "Output directory")
 	Help   = pflag.BoolP("help", "h", false, "Show this help text")
 )
 
