@@ -5,6 +5,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -65,11 +67,16 @@ func run(ctx context.Context, pkg string) error {
 		}
 
 		fmt.Printf("info: downloading %q\n", u)
-		fn, err1 := download(ctx, u)
+		fn, ss, err1 := download(ctx, u)
 		if err1 != nil {
 			return fmt.Errorf("download package: %w", err1)
 		}
 		defer os.Remove(fn)
+
+		fmt.Printf("info: verifying\n")
+		if sss := hex.EncodeToString(ss); sss != pkg_DigestSHA1 {
+			return fmt.Errorf("verify package: expected sha1 %s, got %s", pkg_DigestSHA1, sss)
+		}
 
 		bnd, err = zip.OpenReader(fn)
 	}
@@ -115,35 +122,36 @@ func run(ctx context.Context, pkg string) error {
 	return nil
 }
 
-func download(ctx context.Context, url string) (string, error) {
+func download(ctx context.Context, url string) (string, []byte, error) {
 	tf, err := os.CreateTemp("", "appx.")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer tf.Close()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		os.Remove(tf.Name())
-		return "", err
+		return "", nil, err
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		os.Remove(tf.Name())
-		return "", err
+		return "", nil, err
 	}
 	defer resp.Body.Close()
 
-	if _, err := io.Copy(tf, resp.Body); err != nil {
+	ss := sha1.New()
+	if _, err := io.Copy(io.MultiWriter(tf, ss), resp.Body); err != nil {
 		os.Remove(tf.Name())
-		return "", err
+		return "", nil, err
 	}
 	if err := tf.Close(); err != nil {
 		os.Remove(tf.Name())
-		return "", err
+		return "", nil, err
 	}
-	return tf.Name(), nil
+	return tf.Name(), ss.Sum(nil), nil
 }
 
 func extract(z *zip.Reader, name, dir string) error {

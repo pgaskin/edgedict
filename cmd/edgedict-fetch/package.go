@@ -68,8 +68,8 @@ const (
 // packageRg gets the package URL from the store.rg-adguard.net API.
 func packageRg(ctx context.Context) (string, error) {
 	data := url.Values{
-		"type": {"PackageFamilyName"},
-		"url":  {pkg_PackageFamilyName},
+		"type": {"CategoryID"},
+		"url":  {pkg_WuCategoryId},
 		"ring": {wu_FlightRing},
 		"lang": {wu_Locale},
 	}.Encode()
